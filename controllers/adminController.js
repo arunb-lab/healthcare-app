@@ -130,6 +130,34 @@ exports.getEmergencyCases = async (req, res) => {
     }
 };
 
+// Get all appointments (admin: view and cancel)
+exports.getAllAppointments = async (req, res) => {
+    try {
+        const appointments = await Appointment.find()
+            .populate("patientId", "username email")
+            .populate("doctorId", "username email")
+            .populate("doctorProfileId", "specialization")
+            .sort({ appointmentDate: -1, appointmentTime: -1 })
+            .limit(200);
+        const formatted = appointments.map((a) => ({
+            _id: a._id,
+            patient: a.patientId ? { name: a.patientId.username, email: a.patientId.email } : null,
+            doctor: a.doctorId ? { name: a.doctorId.username, email: a.doctorId.email } : null,
+            specialization: a.doctorProfileId?.specialization,
+            appointmentDate: a.appointmentDate,
+            appointmentTime: a.appointmentTime,
+            reason: a.reason,
+            status: a.status,
+            cancelledBy: a.cancelledBy,
+            cancellationReason: a.cancellationReason,
+        }));
+        res.json(formatted);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: "Server Error" });
+    }
+};
+
 // System reports and analytics
 exports.getSystemReports = async (req, res) => {
     try {
@@ -148,7 +176,7 @@ exports.getSystemReports = async (req, res) => {
         ]);
         const usersSummary = { patient: 0, doctor: 0, admin: 0 };
         usersByRole.forEach((r) => { usersSummary[r._id] = r.count; });
-        const appointmentsSummary = { pending: 0, confirmed: 0, completed: 0, cancelled: 0 };
+        const appointmentsSummary = { pending: 0, approved: 0, rejected: 0, completed: 0, cancelled: 0 };
         appointmentStats.forEach((s) => { appointmentsSummary[s._id] = s.count; });
         let verifiedDoctors = 0, pendingDoctors = 0;
         doctorStats.forEach((s) => {

@@ -12,6 +12,7 @@ router.put("/verify-doctor/:id", authMiddleware, adminMiddleware, adminControlle
 router.get("/users", authMiddleware, adminMiddleware, adminController.getAllUsers);
 router.put("/users/:id/status", authMiddleware, adminMiddleware, adminController.updateUserStatus);
 router.get("/emergency-cases", authMiddleware, adminMiddleware, adminController.getEmergencyCases);
+router.get("/appointments", authMiddleware, adminMiddleware, adminController.getAllAppointments);
 router.get("/reports", authMiddleware, adminMiddleware, adminController.getSystemReports);
 
 module.exports = router;

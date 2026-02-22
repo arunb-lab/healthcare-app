@@ -1,4 +1,5 @@
 const Appointment = require("../models/Appointment");
+const Review = require("../models/Review");
 const Doctor = require("../models/Doctor");
 const User = require("../models/User");
 
@@ -44,7 +45,7 @@ exports.bookAppointment = async (req, res) => {
       doctorId: doctor.userId._id,
       appointmentDate: appointmentDateObj,
       appointmentTime: appointmentTime,
-      status: { $in: ['pending', 'confirmed'] }
+      status: { $in: ['pending', 'approved'] }
     });
 
     if (conflictingAppointment) {
@@ -58,7 +59,7 @@ exports.bookAppointment = async (req, res) => {
       patientId: patientId,
       appointmentDate: appointmentDateObj,
       appointmentTime: appointmentTime,
-      status: { $in: ['pending', 'confirmed'] }
+      status: { $in: ['pending', 'approved'] }
     });
 
     if (patientConflict) {
@@ -121,6 +122,10 @@ exports.getPatientAppointments = async (req, res) => {
       .populate('doctorProfileId', 'specialization consultationFee')
       .sort({ appointmentDate: -1, appointmentTime: -1 });
 
+    const completedIds = appointments.filter((a) => a.status === "completed").map((a) => a._id);
+    const reviewedIds = await Review.find({ appointmentId: { $in: completedIds } }).distinct("appointmentId");
+    const reviewedSet = new Set(reviewedIds.map((id) => id.toString()));
+
     res.json({
       count: appointments.length,
       appointments: appointments.map(apt => ({
@@ -130,7 +135,7 @@ exports.getPatientAppointments = async (req, res) => {
           name: apt.doctorId.username,
           email: apt.doctorId.email,
           phone: apt.doctorId.phone,
-          specialization: apt.doctorProfileId.specialization
+          specialization: apt.doctorProfileId?.specialization
         },
         appointmentDate: apt.appointmentDate,
         appointmentTime: apt.appointmentTime,
@@ -138,6 +143,8 @@ exports.getPatientAppointments = async (req, res) => {
         status: apt.status,
         consultationFee: apt.consultationFee,
         notes: apt.notes,
+        cancellationReason: apt.cancellationReason,
+        hasReviewed: apt.status === "completed" ? reviewedSet.has(apt._id.toString()) : false,
         createdAt: apt.createdAt
       }))
     });
@@ -180,10 +187,20 @@ exports.cancelAppointment = async (req, res) => {
       });
     }
 
-    if (appointment.status === 'completed') {
+    if (appointment.status === 'completed' || appointment.status === 'rejected') {
       return res.status(400).json({
-        message: "Cannot cancel a completed appointment"
+        message: "Cannot cancel this appointment"
       });
+    }
+
+    // Patient can only cancel before appointment time
+    if (isPatient) {
+      const aptDateTime = new Date(`${appointment.appointmentDate}T${appointment.appointmentTime}`);
+      if (aptDateTime <= new Date()) {
+        return res.status(400).json({
+          message: "Cannot cancel appointment after it has started. Please contact the doctor or admin."
+        });
+      }
     }
 
     // Determine who cancelled
@@ -271,14 +288,95 @@ exports.getAppointmentById = async (req, res) => {
   }
 };
 
-// Get booked time slots
+// Doctor: Approve appointment
+exports.approveAppointment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const doctorId = req.user.id;
+
+    const appointment = await Appointment.findById(id);
+    if (!appointment) return res.status(404).json({ message: "Appointment not found" });
+    if (appointment.doctorId.toString() !== doctorId) {
+      return res.status(403).json({ message: "Not your appointment" });
+    }
+    if (appointment.status !== 'pending') {
+      return res.status(400).json({ message: "Only pending appointments can be approved" });
+    }
+
+    appointment.status = 'approved';
+    appointment.updatedAt = new Date();
+    await appointment.save();
+
+    res.json({ message: "Appointment approved", appointment: { id: appointment._id, status: appointment.status } });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Doctor: Reject appointment
+exports.rejectAppointment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const doctorId = req.user.id;
+    const { reason } = req.body;
+
+    const appointment = await Appointment.findById(id);
+    if (!appointment) return res.status(404).json({ message: "Appointment not found" });
+    if (appointment.doctorId.toString() !== doctorId) {
+      return res.status(403).json({ message: "Not your appointment" });
+    }
+    if (appointment.status !== 'pending') {
+      return res.status(400).json({ message: "Only pending appointments can be rejected" });
+    }
+
+    appointment.status = 'rejected';
+    appointment.cancellationReason = reason || "Doctor rejected";
+    appointment.updatedAt = new Date();
+    await appointment.save();
+
+    res.json({ message: "Appointment rejected", appointment: { id: appointment._id, status: appointment.status } });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Doctor: Mark as completed
+exports.markCompleted = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const doctorId = req.user.id;
+
+    const appointment = await Appointment.findById(id);
+    if (!appointment) return res.status(404).json({ message: "Appointment not found" });
+    if (appointment.doctorId.toString() !== doctorId) {
+      return res.status(403).json({ message: "Not your appointment" });
+    }
+    if (appointment.status !== 'approved') {
+      return res.status(400).json({ message: "Only approved appointments can be marked as completed" });
+    }
+
+    appointment.status = 'completed';
+    appointment.updatedAt = new Date();
+    await appointment.save();
+
+    res.json({ message: "Appointment marked as completed", appointment: { id: appointment._id, status: appointment.status } });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Get booked time slots (doctorId in query = Doctor profile _id)
 exports.getBookedSlots = async (req, res) => {
   try {
-    const { doctorId, date } = req.query;
+    const { doctorId: doctorProfileId, date } = req.query;
 
-    if (!doctorId || !date) {
+    if (!doctorProfileId || !date) {
       return res.status(400).json({ message: "Doctor ID and date are required" });
     }
+
+    const doctor = await Doctor.findById(doctorProfileId);
+    if (!doctor) return res.status(404).json({ message: "Doctor not found" });
+    const doctorUserId = doctor.userId;
 
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
@@ -287,12 +385,12 @@ exports.getBookedSlots = async (req, res) => {
     endOfDay.setHours(23, 59, 59, 999);
 
     const appointments = await Appointment.find({
-      doctorId,
+      doctorId: doctorUserId,
       appointmentDate: {
         $gte: startOfDay,
         $lte: endOfDay
       },
-      status: { $in: ['pending', 'confirmed'] }
+      status: { $in: ['pending', 'approved'] }
     }).select('appointmentTime');
 
     const bookedSlots = appointments.map(app => app.appointmentTime);

@@ -19,7 +19,12 @@ router.get("/my", appointmentController.getPatientAppointments);
 // Get appointment by ID
 router.get("/:id", appointmentController.getAppointmentById);
 
-// Cancel appointment
+// Cancel appointment (Patient / Doctor / Admin)
 router.put("/:id/cancel", appointmentController.cancelAppointment);
+
+// Doctor: Approve / Reject / Mark completed (order matters - these must be before /:id)
+router.put("/:id/approve", appointmentController.approveAppointment);
+router.put("/:id/reject", appointmentController.rejectAppointment);
+router.put("/:id/complete", appointmentController.markCompleted);
 
 module.exports = router;
