@@ -1,4 +1,5 @@
 const express = require("express");
+const path = require("path");
 const cors = require("cors");
 const app = express();
 const connectDB = require("./db");
@@ -8,6 +9,7 @@ const doctorRoutes = require("./routes/doctor");
 const appointmentRoutes = require("./routes/appointment");
 const adminRoutes = require("./routes/admin");
 const reviewRoutes = require("./routes/review");
+const chatRoutes = require("./routes/chat");
 const ensureAdmin = require("./utils/ensureAdmin");
 require("dotenv").config();
 
@@ -22,6 +24,7 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json());
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // Routes
 app.use("/users", userRoutes);
@@ -30,6 +33,7 @@ app.use("/doctors", doctorRoutes);
 app.use("/appointments", appointmentRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/reviews", reviewRoutes);
+app.use("/chat", chatRoutes);
 
 // Health check route
 app.get("/health", (req, res) => {
