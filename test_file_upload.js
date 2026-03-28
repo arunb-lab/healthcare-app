@@ -1,6 +1,9 @@
 const http = require('http');
 const fs = require('fs');
 
+// enable khalti test shortcut
+process.env.KHALTI_TEST = 'true';
+
 // Test file upload system
 function testFileUpload() {
     console.log('--- Testing File Upload System ---');
@@ -255,7 +258,9 @@ function bookEmergencyAppointment(patientToken) {
         appointmentDate: "2026-02-24",
         appointmentTime: "15:00",
         reason: "Emergency - Chest pain",
-        isEmergency: true
+        isEmergency: true,
+        paymentToken: "test",
+        paymentAmount: 0
     });
 
     const options = {

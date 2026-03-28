@@ -2,8 +2,8 @@ const http = require('http');
 
 // Test user registration
 const testData = JSON.stringify({
-    username: "testpatient",
-    email: "test@example.com",
+    username: "testpatient" + Date.now(),
+    email: "test" + Date.now() + "@example.com",
     password: "123456",
     role: "patient"
 });

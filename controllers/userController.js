@@ -11,7 +11,7 @@ exports.registerUser = async (req, res) => {
   try {
     console.log("[REGISTER] Registration attempt:", { email: req.body.email, role: req.body.role });
     
-    const { username, email, password, role, phone, address, dateOfBirth, specialization, licenseNumber, qualifications, experience, bio, consultationFee } = req.body;
+    const { username, email, password, role, phone, address, dateOfBirth, specialization, licenseNumber, qualifications, experience, bio, consultationFee, clinicName, clinicAddress, clinicCity, clinicState, clinicPostalCode, clinicPhone, clinicEmail, clinicLat, clinicLng } = req.body;
 
     // Validate required fields
     if (!username || !email || !password || !role) {
@@ -76,6 +76,26 @@ exports.registerUser = async (req, res) => {
         await User.findByIdAndDelete(user._id);
         return res.status(400).json({ message: "Specialization and license number are required for doctor registration" });
       }
+      
+      // Validate required clinic and location fields for doctors with location data
+      if (!clinicName || !clinicAddress || !clinicCity) {
+        await User.findByIdAndDelete(user._id);
+        return res.status(400).json({ 
+          message: "Clinic name, address, and city are required for doctor registration with location" 
+        });
+      }
+      
+      // Validate coordinates if provided
+      if (clinicLat && clinicLng) {
+        const lat = parseFloat(clinicLat);
+        const lng = parseFloat(clinicLng);
+        if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+          await User.findByIdAndDelete(user._id);
+          return res.status(400).json({ 
+            message: "Invalid clinic coordinates. Please provide valid latitude and longitude" 
+          });
+        }
+      }
 
       // Check if license number already exists
       const existingDoctor = await Doctor.findOne({ licenseNumber });
@@ -91,8 +111,22 @@ exports.registerUser = async (req, res) => {
         qualifications: qualifications || [],
         experience: experience || 0,
         bio: bio || "",
-        consultationFee: consultationFee || 0,
+        consultationFee: consultationFee || 500,
         isVerified: false, // Admin verifies in Doctor Verification panel
+        clinic: {
+          name: clinicName || `${specialization} Clinic`,
+          address: clinicAddress || "123 Main Street",
+          city: clinicCity || "Kathmandu",
+          state: clinicState || "Bagmati",
+          postalCode: clinicPostalCode || "44600",
+          country: "Nepal",
+          phone: clinicPhone || phone,
+          email: clinicEmail || email
+        },
+        location: {
+          type: 'Point',
+          coordinates: [parseFloat(clinicLng || 85.3240), parseFloat(clinicLat || 27.7172)]
+        }
       });
 
       await doctor.save();

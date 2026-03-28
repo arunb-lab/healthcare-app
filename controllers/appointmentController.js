@@ -6,7 +6,7 @@ const User = require("../models/User");
 // Book appointment
 exports.bookAppointment = async (req, res) => {
   try {
-    const { doctorId, appointmentDate, appointmentTime, reason, notes, isEmergency } = req.body;
+    const { doctorId, appointmentDate, appointmentTime, reason, notes, isEmergency, paymentToken, paymentAmount } = req.body;
     const patientId = req.user.id;
 
     // Validate required fields
@@ -14,6 +14,37 @@ exports.bookAppointment = async (req, res) => {
       return res.status(400).json({
         message: "Doctor ID, appointment date, time, and reason are required"
       });
+    }
+
+    // verify payment if token provided (required for production)
+    if (!paymentToken || typeof paymentAmount !== 'number') {
+      return res.status(400).json({
+        message: "Payment token and amount must be provided"
+      });
+    }
+
+    // dynamic import axios here so we don't add dependency globally
+    const axios = require('axios');
+    // simple helper to verify with Khalti
+    async function verifyKhaltiToken(token, amount) {
+      // test mode shortcut
+      if (process.env.KHALTI_TEST === 'true' && token === 'test') {
+        return { status: 'Test', transaction_id: 'test-transaction', amount };
+      }
+
+      const config = {
+        headers: {
+          Authorization: `Key ${process.env.KHALTI_SECRET_KEY}`,
+          "Content-Type": "application/json"
+        }
+      };
+      const resp = await axios.post('https://khalti.com/api/v2/payment/verify/', { token, amount }, config);
+      return resp.data;
+    }
+
+    const khaltiResponse = await verifyKhaltiToken(paymentToken, paymentAmount);
+    if (!khaltiResponse || khaltiResponse.transaction_id == null) {
+      return res.status(402).json({ message: 'Payment verification failed' });
     }
 
     // Check if doctor exists
@@ -45,7 +76,7 @@ exports.bookAppointment = async (req, res) => {
       doctorId: doctor.userId._id,
       appointmentDate: appointmentDateObj,
       appointmentTime: appointmentTime,
-      status: { $in: ['pending', 'approved'] }
+      status: { $in: ['payment_pending', 'pending', 'approved'] }
     });
 
     if (conflictingAppointment) {
@@ -59,7 +90,7 @@ exports.bookAppointment = async (req, res) => {
       patientId: patientId,
       appointmentDate: appointmentDateObj,
       appointmentTime: appointmentTime,
-      status: { $in: ['pending', 'approved'] }
+      status: { $in: ['payment_pending', 'pending', 'approved'] }
     });
 
     if (patientConflict) {
@@ -68,7 +99,15 @@ exports.bookAppointment = async (req, res) => {
       });
     }
 
-    // Create appointment
+    // verify that amount matches consultation fee (khalti uses paisa, so multiply by 100)
+    if (process.env.KHALTI_TEST !== 'true') {
+      const expectedAmount = Math.round((doctor.consultationFee || 0) * 100);
+      if (paymentAmount !== expectedAmount) {
+        return res.status(400).json({ message: 'Paid amount does not match consultation fee' });
+      }
+    }
+
+    // Create appointment with payment metadata
     const appointment = new Appointment({
       patientId: patientId,
       doctorId: doctor.userId._id,
@@ -79,6 +118,13 @@ exports.bookAppointment = async (req, res) => {
       notes: notes || '',
       isEmergency: !!isEmergency,
       consultationFee: doctor.consultationFee,
+      payment: {
+        status: 'completed',
+        provider: 'khalti',
+        transactionId: khaltiResponse.transaction_id || khaltiResponse.idx || '',
+        amount: paymentAmount,
+        raw: khaltiResponse
+      },
       status: 'pending'
     });
 
@@ -104,7 +150,8 @@ exports.bookAppointment = async (req, res) => {
         appointmentTime: appointment.appointmentTime,
         reason: appointment.reason,
         status: appointment.status,
-        consultationFee: appointment.consultationFee
+        consultationFee: appointment.consultationFee,
+        payment: appointment.payment
       }
     });
   } catch (err) {
@@ -142,6 +189,7 @@ exports.getPatientAppointments = async (req, res) => {
         reason: apt.reason,
         status: apt.status,
         consultationFee: apt.consultationFee,
+        payment: apt.payment,
         notes: apt.notes,
         cancellationReason: apt.cancellationReason,
         hasReviewed: apt.status === "completed" ? reviewedSet.has(apt._id.toString()) : false,
@@ -390,7 +438,7 @@ exports.getBookedSlots = async (req, res) => {
         $gte: startOfDay,
         $lte: endOfDay
       },
-      status: { $in: ['pending', 'approved'] }
+      status: { $in: ['payment_pending', 'pending', 'approved'] }
     }).select('appointmentTime');
 
     const bookedSlots = appointments.map(app => app.appointmentTime);

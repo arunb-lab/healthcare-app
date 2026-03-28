@@ -1,5 +1,7 @@
 const http = require('http');
 
+process.env.KHALTI_TEST = 'true';
+
 // Test complete appointment flow
 function testCompleteFlow() {
     console.log('--- Testing Complete Appointment Flow ---');
@@ -92,7 +94,9 @@ function bookAppointment(patientToken, doctorId) {
         doctorId: doctorId,
         appointmentDate: "2026-02-25",
         appointmentTime: "10:00",
-        reason: "Regular checkup"
+        reason: "Regular checkup",
+        paymentToken: "test",
+        paymentAmount: 0
     });
 
     const options = {

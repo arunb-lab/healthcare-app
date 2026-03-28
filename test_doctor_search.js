@@ -1,5 +1,7 @@
 const http = require('http');
 
+process.env.KHALTI_TEST = 'true';
+
 // Test doctor search to get profile ID
 function testDoctorSearch() {
     console.log('--- Testing Doctor Search ---');
@@ -87,7 +89,9 @@ function bookAppointmentWithCorrectId(patientToken, doctorProfileId) {
         doctorId: doctorProfileId,
         appointmentDate: "2026-02-25",
         appointmentTime: "10:00",
-        reason: "Regular checkup"
+        reason: "Regular checkup",
+        paymentToken: "test",
+        paymentAmount: 0
     });
 
     const options = {

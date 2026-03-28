@@ -1,5 +1,8 @@
 const http = require('http');
 
+// run integration tests in payment test mode (skips real Khalti calls)
+process.env.KHALTI_TEST = 'true';
+
 // Test doctor registration
 const testData = JSON.stringify({
     username: "testdoctor",
@@ -139,7 +142,9 @@ function bookAppointment(patientToken, doctorId) {
         doctorId: doctorId,
         appointmentDate: "2026-02-25",
         appointmentTime: "10:00",
-        reason: "Regular checkup"
+        reason: "Regular checkup",
+        paymentToken: "test",
+        paymentAmount: 0
     });
 
     const options = {

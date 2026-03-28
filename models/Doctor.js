@@ -33,6 +33,28 @@ const doctorSchema = new mongoose.Schema({
     enum: ['Available', 'Busy', 'On Leave'],
     default: 'Available'
   },
+  clinic: {
+    name: { type: String, required: true },
+    address: { type: String, required: true },
+    city: { type: String, required: true },
+    state: { type: String },
+    postalCode: { type: String },
+    country: { type: String, default: 'Nepal' },
+    phone: { type: String },
+    email: { type: String }
+  },
+  location: {
+    type: {
+      type: String,
+      enum: ['Point'],
+      default: 'Point'
+    },
+    coordinates: {
+      type: [Number], // [longitude, latitude]
+      required: true,
+      index: '2dsphere'
+    }
+  },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });

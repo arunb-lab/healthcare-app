@@ -30,12 +30,27 @@ const appointmentSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'approved', 'rejected', 'cancelled', 'completed'],
+    enum: ['payment_pending', 'pending', 'approved', 'rejected', 'cancelled', 'completed'],
     default: 'pending'
   },
   consultationFee: {
     type: Number,
     default: 0
+  },
+  payment: {
+    status: {
+      type: String,
+      enum: ['pending', 'completed', 'failed'],
+      default: 'pending'
+    },
+    provider: {
+      type: String,
+      default: 'khalti'
+    },
+    pidx: String,           // Khalti v2 payment index
+    transactionId: String,
+    amount: Number,
+    raw: mongoose.Schema.Types.Mixed
   },
   notes: {
     type: String

@@ -10,6 +10,7 @@ const appointmentRoutes = require("./routes/appointment");
 const adminRoutes = require("./routes/admin");
 const reviewRoutes = require("./routes/review");
 const chatRoutes = require("./routes/chat");
+const paymentRoutes = require("./routes/payment");
 const ensureAdmin = require("./utils/ensureAdmin");
 require("dotenv").config();
 
@@ -34,6 +35,7 @@ app.use("/appointments", appointmentRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/reviews", reviewRoutes);
 app.use("/chat", chatRoutes);
+app.use("/payments", paymentRoutes);
 
 // Health check route
 app.get("/health", (req, res) => {
