@@ -7,6 +7,9 @@ const Review = require("../models/Review");
 exports.searchDoctors = async (req, res) => {
   try {
     const { specialization, name, lat, lng, maxDistance = 10 } = req.query;
+    
+    // Escape regex special characters
+    const escapeRegex = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
     // Build query: only show admin-approved (verified) doctors whose User is active
     const activeDoctorUserIds = await User.find({ role: 'doctor', isActive: { $ne: false } }).distinct('_id');
@@ -14,7 +17,7 @@ exports.searchDoctors = async (req, res) => {
 
     // Search by specialization
     if (specialization) {
-      query.specialization = { $regex: specialization, $options: 'i' };
+      query.specialization = { $regex: escapeRegex(specialization), $options: 'i' };
     }
 
     // Geolocation search - find nearby doctors
@@ -39,9 +42,10 @@ exports.searchDoctors = async (req, res) => {
 
     // Filter by name if provided
     if (name) {
-      const nameRegex = new RegExp(name, 'i');
+      const escapedName = escapeRegex(name);
+      const nameRegex = new RegExp(escapedName, 'i');
       doctors = doctors.filter(doctor =>
-        nameRegex.test(doctor.userId.username) ||
+        (doctor.userId && nameRegex.test(doctor.userId.username)) ||
         nameRegex.test(doctor.specialization)
       );
     }
@@ -60,26 +64,28 @@ exports.searchDoctors = async (req, res) => {
       };
     });
 
-    const doctorsList = doctors.map(doctor => {
-      const r = ratingMap[doctor._id.toString()] || { averageRating: 0, totalReviews: 0 };
-      return {
-        id: doctor._id,
-        userId: doctor.userId._id,
-        name: doctor.userId.username,
-        email: doctor.userId.email,
-        phone: doctor.userId.phone,
-        specialization: doctor.specialization,
-        qualifications: doctor.qualifications,
-        experience: doctor.experience,
-        bio: doctor.bio,
-        consultationFee: doctor.consultationFee,
-        isVerified: doctor.isVerified,
-        averageRating: r.averageRating,
-        totalReviews: r.totalReviews,
-        clinic: doctor.clinic,
-        location: doctor.location
-      };
-    });
+    const doctorsList = doctors
+      .filter(doctor => doctor.userId) // Ensure userId was successfully populated
+      .map(doctor => {
+        const r = ratingMap[doctor._id.toString()] || { averageRating: 0, totalReviews: 0 };
+        return {
+          id: doctor._id,
+          userId: doctor.userId._id,
+          name: doctor.userId.username,
+          email: doctor.userId.email,
+          phone: doctor.userId.phone,
+          specialization: doctor.specialization,
+          qualifications: doctor.qualifications,
+          experience: doctor.experience,
+          bio: doctor.bio,
+          consultationFee: doctor.consultationFee,
+          isVerified: doctor.isVerified,
+          averageRating: r.averageRating,
+          totalReviews: r.totalReviews,
+          clinic: doctor.clinic,
+          location: doctor.location
+        };
+      });
 
     res.json({
       count: doctorsList.length,
@@ -166,9 +172,10 @@ exports.getNearbyDoctors = async (req, res) => {
       location: { $exists: true }
     };
 
-    // Add specialization filter if provided
+    // Add specialization filter if provided (escaped for safety)
     if (specialization) {
-      query.specialization = { $regex: specialization, $options: 'i' };
+      const escapeRegex = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      query.specialization = { $regex: escapeRegex(specialization), $options: 'i' };
     }
 
     // Get all doctors with location data
@@ -211,8 +218,8 @@ exports.getNearbyDoctors = async (req, res) => {
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
         const distanceKm = R * c;
         
-        // Only include if within max distance
-        if (distanceKm <= maxDistanceKm) {
+        // Only include if within max distance and has valid user profile
+        if (distanceKm <= maxDistanceKm && doctor.userId) {
           const r = ratingMap[doctor._id.toString()] || { averageRating: 0, totalReviews: 0 };
           
           doctorsList.push({
