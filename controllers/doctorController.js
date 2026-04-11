@@ -136,10 +136,9 @@ exports.getDoctorById = async (req, res) => {
       experience: doctor.experience,
       bio: doctor.bio,
       consultationFee: doctor.consultationFee,
+      availability: doctor.availability,
       isVerified: doctor.isVerified,
       verifiedBy: doctor.verifiedBy?.username,
-      verifiedAt: doctor.verifiedAt,
-      availability: doctor.availability,
       averageRating: r.averageRating,
       totalReviews: r.totalReviews,
       clinic: doctor.clinic,
@@ -284,8 +283,15 @@ exports.getDoctorAppointments = async (req, res) => {
       return res.status(404).json({ message: "Doctor profile not found" });
     }
 
-    const appointments = await Appointment.find({ doctorId: doctorId })
+    const appointments = await Appointment.find({
+      $or: [
+        { doctorId: doctorId },
+        { 'additionalDoctors.userId': doctorId }
+      ]
+    })
       .populate('patientId', 'username email phone address')
+      .populate('doctorId', 'username email')
+      .populate('additionalDoctors.userId', 'username email')
       .sort({ appointmentDate: 1, appointmentTime: 1 });
 
     res.json({
@@ -336,6 +342,81 @@ exports.getDoctorProfile = async (req, res) => {
     }
 
     res.json(doctor);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Get available slots for a doctor on a specific date
+exports.getDoctorSlots = async (req, res) => {
+  try {
+    const { id } = req.params; // doctorProfileId
+    const { date } = req.query;
+
+    if (!date) {
+      return res.status(400).json({ message: "Date is required" });
+    }
+
+    // Attempt to find doctor by Profile ID first, then by User ID
+    let doctor = await Doctor.findById(id);
+    if (!doctor) {
+      doctor = await Doctor.findOne({ userId: id });
+    }
+    
+    if (!doctor) {
+      return res.status(404).json({ message: "Doctor not found" });
+    }
+
+    // Get day name (monday, tuesday, etc.)
+    const dateObj = new Date(date);
+    const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+    
+    // Get working hours for that day
+    const workingHours = doctor.availability ? doctor.availability[dayName] : [];
+
+    // Get booked appointments for this doctor on this date
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const bookedAppointments = await Appointment.find({
+      doctorId: doctor.userId,
+      appointmentDate: { $gte: startOfDay, $lte: endOfDay },
+      status: { $in: ['pending', 'approved'] }
+    }).select('appointmentTime');
+
+    const bookedSlots = bookedAppointments.map(a => a.appointmentTime);
+
+    // Generate 30-min slots for each working hours range
+    const availableSlots = [];
+    
+    if (workingHours && workingHours.length > 0) {
+      workingHours.forEach(range => {
+        let current = range.start;
+        while (current < range.end) {
+          if (!bookedSlots.includes(current)) {
+            availableSlots.push(current);
+          }
+          
+          // Increment by 30 mins
+          let [hours, minutes] = current.split(':').map(Number);
+          minutes += 30;
+          if (minutes >= 60) {
+            hours += 1;
+            minutes -= 60;
+          }
+          current = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+        }
+      });
+    }
+
+    res.json({ 
+      day: dayName,
+      workingHours: workingHours,
+      bookedSlots: bookedSlots,
+      availableSlots: availableSlots 
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

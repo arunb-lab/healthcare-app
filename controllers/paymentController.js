@@ -6,18 +6,32 @@ const KHALTI_BASE = 'https://a.khalti.com/api/v2/epayment';
 
 exports.initiateKhalti = async (req, res) => {
   try {
-    const { doctorId, appointmentDate, appointmentTime, reason, notes, isEmergency } = req.body;
+    const { doctorId, additionalDoctorIds, appointmentDate, appointmentTime, reason, notes, isEmergency } = req.body;
     const patientId = req.user.id;
 
     if (!doctorId || !appointmentDate || !appointmentTime || !reason) {
       return res.status(400).json({ message: 'Doctor ID, date, time and reason are required' });
     }
 
-    // Validate doctor
+    // Validate main doctor
     const doctor = await Doctor.findById(doctorId).populate('userId');
     if (!doctor) return res.status(404).json({ message: 'Doctor not found' });
     if (!doctor.isVerified) return res.status(400).json({ message: 'Doctor is not verified' });
-    if (doctor.userId._id.toString() === patientId) {
+    
+    // Validate additional doctors
+    const additionalDoctorsData = [];
+    if (additionalDoctorIds && Array.isArray(additionalDoctorIds)) {
+      for (const id of additionalDoctorIds) {
+        const doc = await Doctor.findById(id).populate('userId');
+        if (!doc) return res.status(404).json({ message: `Additional doctor ${id} not found` });
+        if (!doc.isVerified) return res.status(400).json({ message: `Doctor ${doc.userId.username} is not verified` });
+        additionalDoctorsData.push({ userId: doc.userId._id, doctorProfileId: doc._id });
+      }
+    }
+
+    const allDoctorUserIds = [doctor.userId._id, ...additionalDoctorsData.map(d => d.userId)];
+    
+    if (allDoctorUserIds.some(id => id.toString() === patientId)) {
       return res.status(400).json({ message: 'Cannot book appointment with yourself' });
     }
 
@@ -30,15 +44,19 @@ exports.initiateKhalti = async (req, res) => {
     const appointmentDateObj = new Date(appointmentDate);
     appointmentDateObj.setHours(0, 0, 0, 0);
 
-    // Doctor slot conflict check
-    const doctorConflict = await Appointment.findOne({
-      doctorId: doctor.userId._id,
+    // Conflict check for ALL doctors
+    const conflict = await Appointment.findOne({
+      $or: [
+        { doctorId: { $in: allDoctorUserIds } },
+        { 'additionalDoctors.userId': { $in: allDoctorUserIds } }
+      ],
       appointmentDate: appointmentDateObj,
       appointmentTime,
       status: { $in: ['payment_pending', 'pending', 'approved'] },
     });
-    if (doctorConflict) {
-      return res.status(400).json({ message: 'This time slot is already booked. Please choose another time.' });
+
+    if (conflict) {
+      return res.status(400).json({ message: 'One or more doctors are already booked for this time slot.' });
     }
 
     // Patient conflict check
@@ -61,6 +79,7 @@ exports.initiateKhalti = async (req, res) => {
       patientId,
       doctorId: doctor.userId._id,
       doctorProfileId: doctor._id,
+      additionalDoctors: additionalDoctorsData,
       appointmentDate: appointmentDateObj,
       appointmentTime,
       reason,
@@ -72,6 +91,8 @@ exports.initiateKhalti = async (req, res) => {
     });
     await appointment.save();
 
+    const purchaseName = `Appointment with Dr. ${doctor.userId.username}${additionalDoctorsData.length > 0 ? ` & ${additionalDoctorsData.length} more` : ''}`;
+
     if (process.env.KHALTI_TEST === 'true') {
       const fakePidx = `test_${appointment._id}`;
       appointment.payment.pidx = fakePidx;
@@ -81,7 +102,7 @@ exports.initiateKhalti = async (req, res) => {
         `${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/mock-khalti` +
         `?pidx=${fakePidx}` +
         `&amount=${amount}` +
-        `&name=${encodeURIComponent(`Appointment with Dr. ${doctor.userId.username}`)}`;
+        `&name=${encodeURIComponent(purchaseName)}`;
       return res.json({
         pidx: fakePidx,
         payment_url: mockUrl,
@@ -98,7 +119,7 @@ exports.initiateKhalti = async (req, res) => {
           website_url: process.env.FRONTEND_URL || 'http://localhost:5173',
           amount,
           purchase_order_id: appointment._id.toString(),
-          purchase_order_name: `Appointment with Dr. ${doctor.userId.username}`,
+          purchase_order_name: purchaseName,
           customer_info: {
             name: req.user.username,
             email: req.user.email,

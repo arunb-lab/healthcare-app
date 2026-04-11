@@ -16,6 +16,16 @@ const appointmentSchema = new mongoose.Schema({
     ref: 'Doctor',
     required: true
   },
+  additionalDoctors: [{
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    doctorProfileId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Doctor'
+    }
+  }],
   appointmentDate: {
     type: Date,
     required: true
@@ -54,6 +64,20 @@ const appointmentSchema = new mongoose.Schema({
   },
   notes: {
     type: String
+  },
+  prescription: {
+    medicines: [{
+      name: String,
+      dosage: String,
+      duration: String,
+      instruction: String
+    }],
+    advice: String,
+    prescribedAt: Date,
+    isPrescribed: {
+      type: Boolean,
+      default: false
+    }
   },
   isEmergency: {
     type: Boolean,

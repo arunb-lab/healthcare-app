@@ -8,6 +8,7 @@ const { authMiddleware, doctorMiddleware } = require("../middleware/authMiddlewa
 // Public routes
 router.get("/search", doctorController.searchDoctors);
 router.get("/nearby", doctorController.getNearbyDoctors);
+router.get("/slots/:id", doctorController.getDoctorSlots);
 router.get("/:id", doctorController.getDoctorById);
 
 // Protected routes - Doctor's own appointments

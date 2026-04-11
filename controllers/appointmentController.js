@@ -27,7 +27,6 @@ exports.bookAppointment = async (req, res) => {
     const axios = require('axios');
     // simple helper to verify with Khalti
     async function verifyKhaltiToken(token, amount) {
-      // test mode shortcut
       if (process.env.KHALTI_TEST === 'true' && token === 'test') {
         return { status: 'Test', transaction_id: 'test-transaction', amount };
       }
@@ -47,20 +46,17 @@ exports.bookAppointment = async (req, res) => {
       return res.status(402).json({ message: 'Payment verification failed' });
     }
 
-    // Check if doctor exists
     const doctor = await Doctor.findById(doctorId).populate('userId');
     if (!doctor) {
       return res.status(404).json({ message: "Doctor not found" });
     }
 
-    // Check if patient is trying to book with themselves
     if (doctor.userId._id.toString() === patientId) {
       return res.status(400).json({
         message: "Cannot book appointment with yourself"
       });
     }
 
-    // Check if appointment date is in the future
     const appointmentDateTime = new Date(`${appointmentDate}T${appointmentTime}`);
     if (appointmentDateTime < new Date()) {
       return res.status(400).json({
@@ -68,7 +64,6 @@ exports.bookAppointment = async (req, res) => {
       });
     }
 
-    // Check for conflicting appointments 
     const appointmentDateObj = new Date(appointmentDate);
     appointmentDateObj.setHours(0, 0, 0, 0);
 
@@ -85,7 +80,6 @@ exports.bookAppointment = async (req, res) => {
       });
     }
 
-    // Check if patient already has an appointment at this time
     const patientConflict = await Appointment.findOne({
       patientId: patientId,
       appointmentDate: appointmentDateObj,
@@ -99,7 +93,6 @@ exports.bookAppointment = async (req, res) => {
       });
     }
 
-    // verify that amount matches consultation fee (khalti uses paisa, so multiply by 100)
     if (process.env.KHALTI_TEST !== 'true') {
       const expectedAmount = Math.round((doctor.consultationFee || 0) * 100);
       if (paymentAmount !== expectedAmount) {
@@ -107,7 +100,6 @@ exports.bookAppointment = async (req, res) => {
       }
     }
 
-    // Create appointment with payment metadata
     const appointment = new Appointment({
       patientId: patientId,
       doctorId: doctor.userId._id,
@@ -129,8 +121,6 @@ exports.bookAppointment = async (req, res) => {
     });
 
     await appointment.save();
-
-    // for response
     await appointment.populate('doctorId', 'username email');
     await appointment.populate('patientId', 'username email');
 
@@ -167,34 +157,63 @@ exports.getPatientAppointments = async (req, res) => {
     const appointments = await Appointment.find({ patientId: patientId })
       .populate('doctorId', 'username email phone')
       .populate('doctorProfileId', 'specialization consultationFee')
+      .populate('additionalDoctors.userId', 'username email phone')
+      .populate('additionalDoctors.doctorProfileId', 'specialization')
       .sort({ appointmentDate: -1, appointmentTime: -1 });
 
     const completedIds = appointments.filter((a) => a.status === "completed").map((a) => a._id);
     const reviewedIds = await Review.find({ appointmentId: { $in: completedIds } }).distinct("appointmentId");
     const reviewedSet = new Set(reviewedIds.map((id) => id.toString()));
 
+    const doctorProfiles = await Doctor.find({ userId: { $in: appointments.map(a => a.doctorId._id) } });
+    const profileMap = new Map(doctorProfiles.map(p => [p.userId.toString(), p._id.toString()]));
+
     res.json({
       count: appointments.length,
-      appointments: appointments.map(apt => ({
-        id: apt._id,
-        doctor: {
-          id: apt.doctorId._id,
-          name: apt.doctorId.username,
-          email: apt.doctorId.email,
-          phone: apt.doctorId.phone,
-          specialization: apt.doctorProfileId?.specialization
-        },
-        appointmentDate: apt.appointmentDate,
-        appointmentTime: apt.appointmentTime,
-        reason: apt.reason,
-        status: apt.status,
-        consultationFee: apt.consultationFee,
-        payment: apt.payment,
-        notes: apt.notes,
-        cancellationReason: apt.cancellationReason,
-        hasReviewed: apt.status === "completed" ? reviewedSet.has(apt._id.toString()) : false,
-        createdAt: apt.createdAt
-      }))
+      appointments: appointments.map(apt => {
+        const docId = apt.doctorId?._id || apt.doctorId;
+        const profileId = apt.doctorProfileId?._id || apt.doctorProfileId || (docId ? profileMap.get(docId.toString()) : null);
+        
+        return {
+          _id: apt._id,
+          id: apt._id,
+          doctorId: apt.doctorId ? {
+            _id: apt.doctorId._id,
+            id: apt.doctorId._id,
+            username: apt.doctorId.username,
+            name: apt.doctorId.username,
+            email: apt.doctorId.email,
+            phone: apt.doctorId.phone,
+            specialization: apt.doctorProfileId?.specialization || (apt.doctorId ? doctorProfiles.find(p => p.userId.toString() === apt.doctorId._id.toString())?.specialization : null)
+          } : null,
+          doctor: apt.doctorId ? {
+            _id: apt.doctorId._id,
+            id: apt.doctorId._id,
+            name: apt.doctorId.username,
+            email: apt.doctorId.email,
+            phone: apt.doctorId.phone,
+            specialization: apt.doctorProfileId?.specialization || (apt.doctorId ? doctorProfiles.find(p => p.userId.toString() === apt.doctorId._id.toString())?.specialization : null)
+          } : null,
+          doctorProfileId: profileId,
+          additionalDoctors: apt.additionalDoctors?.map(ad => ({
+            id: ad.userId?._id,
+            _id: ad.userId?._id,
+            name: ad.userId?.username,
+            specialization: ad.doctorProfileId?.specialization
+          })) || [],
+          appointmentDate: apt.appointmentDate,
+          appointmentTime: apt.appointmentTime,
+          reason: apt.reason,
+          status: apt.status,
+          consultationFee: apt.consultationFee,
+          payment: apt.payment,
+          notes: apt.notes,
+          cancellationReason: apt.cancellationReason,
+          prescription: apt.prescription,
+          hasReviewed: apt.status === "completed" ? reviewedSet.has(apt._id.toString()) : false,
+          createdAt: apt.createdAt
+        };
+      })
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -217,7 +236,6 @@ exports.cancelAppointment = async (req, res) => {
       return res.status(404).json({ message: "Appointment not found" });
     }
 
-    // Check if user has permission to cancel
     const isPatient = appointment.patientId._id.toString() === userId;
     const isDoctor = appointment.doctorId._id.toString() === userId;
     const isAdmin = userRole === 'admin';
@@ -228,20 +246,14 @@ exports.cancelAppointment = async (req, res) => {
       });
     }
 
-    // Check if appointment can be cancelled
     if (appointment.status === 'cancelled') {
-      return res.status(400).json({
-        message: "Appointment is already cancelled"
-      });
+      return res.status(400).json({ message: "Appointment is already cancelled" });
     }
 
     if (appointment.status === 'completed' || appointment.status === 'rejected') {
-      return res.status(400).json({
-        message: "Cannot cancel this appointment"
-      });
+      return res.status(400).json({ message: "Cannot cancel this appointment" });
     }
 
-    // Patient can only cancel before appointment time
     if (isPatient) {
       const aptDateTime = new Date(`${appointment.appointmentDate}T${appointment.appointmentTime}`);
       if (aptDateTime <= new Date()) {
@@ -251,12 +263,10 @@ exports.cancelAppointment = async (req, res) => {
       }
     }
 
-    // Determine who cancelled
     let cancelledBy = 'patient';
     if (isDoctor) cancelledBy = 'doctor';
     if (isAdmin) cancelledBy = 'admin';
 
-    // Update appointment
     appointment.status = 'cancelled';
     appointment.cancelledBy = cancelledBy;
     appointment.cancellationReason = cancellationReason || 'No reason provided';
@@ -294,7 +304,6 @@ exports.getAppointmentById = async (req, res) => {
       return res.status(404).json({ message: "Appointment not found" });
     }
 
-    // Check if user has permission to view
     const isPatient = appointment.patientId._id.toString() === userId;
     const isDoctor = appointment.doctorId._id.toString() === userId;
     const isAdmin = userRole === 'admin';
@@ -433,7 +442,10 @@ exports.getBookedSlots = async (req, res) => {
     endOfDay.setHours(23, 59, 59, 999);
 
     const appointments = await Appointment.find({
-      doctorId: doctorUserId,
+      $or: [
+        { doctorId: doctorUserId },
+        { 'additionalDoctors.userId': doctorUserId }
+      ],
       appointmentDate: {
         $gte: startOfDay,
         $lte: endOfDay
@@ -443,6 +455,125 @@ exports.getBookedSlots = async (req, res) => {
 
     const bookedSlots = appointments.map(app => app.appointmentTime);
     res.json(bookedSlots);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Reschedule appointment
+exports.rescheduleAppointment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { appointmentDate, appointmentTime } = req.body;
+    const userId = req.user.id;
+
+    if (!appointmentDate || !appointmentTime) {
+      return res.status(400).json({ message: "Date and time are required" });
+    }
+
+    const appointment = await Appointment.findById(id);
+    if (!appointment) return res.status(404).json({ message: "Appointment not found" });
+
+    if (appointment.patientId.toString() !== userId) {
+      return res.status(403).json({ message: "You don't have permission to reschedule this appointment" });
+    }
+
+    if (!['pending', 'approved'].includes(appointment.status)) {
+      return res.status(400).json({ message: `Cannot reschedule a ${appointment.status} appointment` });
+    }
+
+    const newDateTime = new Date(`${appointmentDate}T${appointmentTime}`);
+    if (newDateTime < new Date()) {
+      return res.status(400).json({ message: "Rescheduled date and time must be in the future" });
+    }
+
+    const appointmentDateObj = new Date(appointmentDate);
+    appointmentDateObj.setHours(0, 0, 0, 0);
+
+    const doctor = await Doctor.findById(appointment.doctorProfileId);
+    if (doctor && doctor.availability) {
+      const dayOfWeek = appointmentDateObj.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+      const slots = doctor.availability[dayOfWeek];
+      
+      if (slots && slots.length > 0) {
+        const isWithinWorkingHours = slots.some(slot => appointmentTime >= slot.start && appointmentTime <= slot.end);
+        if (!isWithinWorkingHours) {
+          return res.status(400).json({ message: `New time is outside the doctor's working hours (${slots.map(s => `${s.start}-${s.end}`).join(", ")})` });
+        }
+      }
+    }
+
+    const additionalDoctors = appointment.additionalDoctors || [];
+    const allDoctorUserIds = [appointment.doctorId, ...additionalDoctors.map(ad => ad.userId)];
+
+    const conflict = await Appointment.findOne({
+      _id: { $ne: id },
+      $or: [
+        { doctorId: { $in: allDoctorUserIds } },
+        { 'additionalDoctors.userId': { $in: allDoctorUserIds } }
+      ],
+      appointmentDate: appointmentDateObj,
+      appointmentTime: appointmentTime,
+      status: { $in: ['payment_pending', 'pending', 'approved'] }
+    });
+
+    if (conflict) {
+      return res.status(400).json({ message: "One or more doctors are already booked for this new time slot." });
+    }
+
+    appointment.appointmentDate = appointmentDateObj;
+    appointment.appointmentTime = appointmentTime;
+    appointment.updatedAt = new Date();
+    await appointment.save();
+
+    res.json({
+      message: "Appointment rescheduled successfully",
+      appointment: {
+        id: appointment._id,
+        appointmentDate: appointment.appointmentDate,
+        appointmentTime: appointment.appointmentTime,
+        status: appointment.status
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Prescribe medicine
+exports.prescribeAppointment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { medicines, advice } = req.body;
+    const doctorId = req.user.id;
+
+    const appointment = await Appointment.findById(id);
+
+    if (!appointment) {
+      return res.status(404).json({ message: "Appointment not found" });
+    }
+
+    if (appointment.doctorId.toString() !== doctorId) {
+      return res.status(403).json({ message: "You don't have permission to prescribe for this appointment" });
+    }
+
+    appointment.prescription = {
+      medicines,
+      advice,
+      prescribedAt: new Date(),
+      isPrescribed: true
+    };
+    
+    if (appointment.status === 'approved') {
+      appointment.status = 'completed';
+    }
+
+    await appointment.save();
+
+    res.json({
+      message: "Prescription saved successfully",
+      appointment
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

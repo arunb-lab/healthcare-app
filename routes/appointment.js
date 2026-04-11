@@ -22,9 +22,13 @@ router.get("/:id", appointmentController.getAppointmentById);
 // Cancel appointment (Patient / Doctor / Admin)
 router.put("/:id/cancel", appointmentController.cancelAppointment);
 
+// Reschedule appointment
+router.put("/:id/reschedule", appointmentController.rescheduleAppointment);
+
 // Doctor: Approve / Reject / Mark completed (order matters - these must be before /:id)
 router.put("/:id/approve", appointmentController.approveAppointment);
 router.put("/:id/reject", appointmentController.rejectAppointment);
 router.put("/:id/complete", appointmentController.markCompleted);
+router.post("/:id/prescribe", appointmentController.prescribeAppointment);
 
 module.exports = router;
