@@ -421,3 +421,52 @@ exports.getDoctorSlots = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
+// Get doctor dashboard statistics
+exports.getDoctorStats = async (req, res) => {
+  try {
+    const doctorId = req.user.id;
+
+    // Find doctor profile
+    const doctor = await Doctor.findOne({ userId: doctorId });
+    if (!doctor) {
+      return res.status(404).json({ message: "Doctor profile not found" });
+    }
+
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 59, 999);
+
+    const [totalAppointments, pendingCount, todayCount, ratingStats] = await Promise.all([
+      Appointment.countDocuments({ 
+        $or: [{ doctorId: doctorId }, { 'additionalDoctors.userId': doctorId }] 
+      }),
+      Appointment.countDocuments({ 
+        $or: [{ doctorId: doctorId }, { 'additionalDoctors.userId': doctorId }],
+        status: 'pending' 
+      }),
+      Appointment.countDocuments({ 
+        $or: [{ doctorId: doctorId }, { 'additionalDoctors.userId': doctorId }],
+        appointmentDate: { $gte: startOfToday, $lte: endOfToday },
+        status: { $in: ['pending', 'approved'] }
+      }),
+      Review.aggregate([
+        { $match: { doctorProfileId: doctor._id } },
+        { $group: { _id: null, avg: { $avg: "$rating" }, count: { $sum: 1 } } }
+      ])
+    ]);
+
+    res.json({
+      totalAppointments,
+      pendingCount,
+      todayCount,
+      averageRating: ratingStats[0] ? Math.round(ratingStats[0].avg * 10) / 10 : 0,
+      totalReviews: ratingStats[0] ? ratingStats[0].count : 0,
+      doctorStatus: doctor.status,
+      isVerified: doctor.isVerified
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};

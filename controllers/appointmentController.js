@@ -153,26 +153,70 @@ exports.bookAppointment = async (req, res) => {
 exports.getPatientAppointments = async (req, res) => {
   try {
     const patientId = req.user.id;
+    console.log('=== GET PATIENT APPOINTMENTS ===');
+    console.log('Patient ID from token:', patientId);
+    console.log('User from request:', req.user);
 
-    const appointments = await Appointment.find({ patientId: patientId })
+    // First, let's check if there are any appointments at all
+    const allAppointments = await Appointment.find({});
+    console.log('Total appointments in database:', allAppointments.length);
+    
+    // Check if any appointments have the current patient ID
+    const directMatch = await Appointment.find({ patientId: patientId });
+    console.log('Direct patientId matches:', directMatch.length);
+    
+    // Also check if patientId might be stored as string vs ObjectId
+    const patientIdString = patientId.toString();
+    const stringMatches = await Appointment.find({ patientId: patientIdString });
+    console.log('String patientId matches:', stringMatches.length);
+
+    // Let's also check what patientIds exist in the database
+    const existingPatientIds = await Appointment.distinct('patientId');
+    console.log('Existing patientIds in database:', existingPatientIds);
+    console.log('Current patientId as string:', patientIdString);
+    console.log('Current patientId as ObjectId:', patientId);
+
+    // Try to find appointments with both formats
+    const appointments = await Appointment.find({ 
+      $or: [
+        { patientId: patientId },
+        { patientId: patientIdString }
+      ]
+    })
       .populate('doctorId', 'username email phone')
       .populate('doctorProfileId', 'specialization consultationFee')
       .populate('additionalDoctors.userId', 'username email phone')
       .populate('additionalDoctors.doctorProfileId', 'specialization')
       .sort({ appointmentDate: -1, appointmentTime: -1 });
 
+    console.log('Final appointments found:', appointments.length);
+    console.log('Appointments details:', appointments.map(apt => ({
+      id: apt._id,
+      patientId: apt.patientId,
+      patientIdType: typeof apt.patientId,
+      doctorId: apt.doctorId,
+      date: apt.appointmentDate,
+      time: apt.appointmentTime,
+      status: apt.status
+    })));
+
     const completedIds = appointments.filter((a) => a.status === "completed").map((a) => a._id);
     const reviewedIds = await Review.find({ appointmentId: { $in: completedIds } }).distinct("appointmentId");
     const reviewedSet = new Set(reviewedIds.map((id) => id.toString()));
 
-    const doctorProfiles = await Doctor.find({ userId: { $in: appointments.map(a => a.doctorId._id) } });
+    const validDoctorUserIds = appointments
+      .map(a => a.doctorId?._id || a.doctorId)
+      .filter(id => id);
+      
+    const doctorProfiles = await Doctor.find({ userId: { $in: validDoctorUserIds } });
     const profileMap = new Map(doctorProfiles.map(p => [p.userId.toString(), p._id.toString()]));
 
     res.json({
       count: appointments.length,
       appointments: appointments.map(apt => {
         const docId = apt.doctorId?._id || apt.doctorId;
-        const profileId = apt.doctorProfileId?._id || apt.doctorProfileId || (docId ? profileMap.get(docId.toString()) : null);
+        const docIdStr = docId?.toString();
+        const profileId = apt.doctorProfileId?._id || apt.doctorProfileId || (docIdStr ? profileMap.get(docIdStr) : null);
         
         return {
           _id: apt._id,
@@ -236,8 +280,8 @@ exports.cancelAppointment = async (req, res) => {
       return res.status(404).json({ message: "Appointment not found" });
     }
 
-    const isPatient = appointment.patientId._id.toString() === userId;
-    const isDoctor = appointment.doctorId._id.toString() === userId;
+    const isPatient = appointment.patientId && appointment.patientId._id.toString() === userId;
+    const isDoctor = appointment.doctorId && appointment.doctorId._id.toString() === userId;
     const isAdmin = userRole === 'admin';
 
     if (!isPatient && !isDoctor && !isAdmin) {
@@ -304,8 +348,8 @@ exports.getAppointmentById = async (req, res) => {
       return res.status(404).json({ message: "Appointment not found" });
     }
 
-    const isPatient = appointment.patientId._id.toString() === userId;
-    const isDoctor = appointment.doctorId._id.toString() === userId;
+    const isPatient = appointment.patientId && appointment.patientId._id.toString() === userId;
+    const isDoctor = appointment.doctorId && appointment.doctorId._id.toString() === userId;
     const isAdmin = userRole === 'admin';
 
     if (!isPatient && !isDoctor && !isAdmin) {
@@ -573,6 +617,47 @@ exports.prescribeAppointment = async (req, res) => {
     res.json({
       message: "Prescription saved successfully",
       appointment
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Get patient dashboard statistics
+exports.getPatientStats = async (req, res) => {
+  try {
+    const patientId = req.user.id;
+
+    const [totalAppointments, upcomingCount, completedCount, cancelledCount] = await Promise.all([
+      Appointment.countDocuments({ patientId }),
+      Appointment.countDocuments({ patientId, status: { $in: ['pending', 'approved'] } }),
+      Appointment.countDocuments({ patientId, status: 'completed' }),
+      Appointment.countDocuments({ patientId, status: 'cancelled' })
+    ]);
+
+    // Get next upcoming appointment
+    const nextAppointment = await Appointment.findOne({ 
+      patientId, 
+      status: { $in: ['pending', 'approved'] },
+      appointmentDate: { $gte: new Date().setHours(0,0,0,0) }
+    })
+    .populate('doctorId', 'username')
+    .populate('doctorProfileId', 'specialization')
+    .sort({ appointmentDate: 1, appointmentTime: 1 });
+
+    res.json({
+      total: totalAppointments,
+      upcoming: upcomingCount,
+      completed: completedCount,
+      cancelled: cancelledCount,
+      nextAppointment: nextAppointment ? {
+        id: nextAppointment._id,
+        doctor: nextAppointment.doctorId?.username,
+        specialization: nextAppointment.doctorProfileId?.specialization,
+        date: nextAppointment.appointmentDate,
+        time: nextAppointment.appointmentTime,
+        status: nextAppointment.status
+      } : null
     });
   } catch (err) {
     res.status(500).json({ message: err.message });

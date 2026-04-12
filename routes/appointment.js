@@ -15,6 +15,8 @@ router.get("/booked-slots", appointmentController.getBookedSlots);
 
 // Get patient appointments
 router.get("/my", appointmentController.getPatientAppointments);
+router.get("/patient-stats", appointmentController.getPatientStats);
+
 
 // Get appointment by ID
 router.get("/:id", appointmentController.getAppointmentById);

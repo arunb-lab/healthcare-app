@@ -32,7 +32,7 @@ app.use("/users", userRoutes);
 app.use("/patients", patientRoutes);
 app.use("/doctors", doctorRoutes);
 app.use("/appointments", appointmentRoutes);
-app.use("/api/admin", adminRoutes);
+app.use("/admin", adminRoutes);
 app.use("/reviews", reviewRoutes);
 app.use("/chat", chatRoutes);
 app.use("/payments", paymentRoutes);
