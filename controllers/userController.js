@@ -5,6 +5,7 @@ const Doctor = require("../models/Doctor");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const ensureAdmin = require("../utils/ensureAdmin");
+const sendEmail = require("../utils/emailService");
 
 // Register User (Patient, Doctor, Admin)
 exports.registerUser = async (req, res) => {
@@ -289,7 +290,40 @@ exports.forgotPassword = async (req, res) => {
     user.updatedAt = new Date();
     await user.save();
     const resetLink = `${process.env.FRONTEND_URL || "http://localhost:5173"}/reset-password?token=${token}`;
-    res.json({ message: "If an account exists with this email, you will receive a password reset link.", resetLink });
+
+    // Send Email
+    const message = `You are receiving this email because you (or someone else) have requested the reset of a password. Please click on the following link, or paste this into your browser to complete the process:\n\n ${resetLink}`;
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
+        <h2 style="color: #2563eb; text-align: center;">Password Reset Request</h2>
+        <p>Hello,</p>
+        <p>You requested to reset your password for your Healthseva account. Click the button below to proceed:</p>
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${resetLink}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold;">Reset Password</a>
+        </div>
+        <p>If you did not request this, please ignore this email.</p>
+        <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+        <p style="font-size: 12px; color: #666; text-align: center;">Healthseva Healthcare Appointment System</p>
+      </div>
+    `;
+
+    try {
+      await sendEmail({
+        email: user.email,
+        subject: "Healthseva Password Reset",
+        message,
+        html,
+      });
+      res.json({ message: "Password reset link sent to your email.", resetLink });
+    } catch (mailErr) {
+      console.error("[FORGOT_PASSWORD] Email send failed:", mailErr);
+      // Fallback for demo: return link in response even if mail fails
+      res.json({ 
+        message: "Email service error. Proceeding in Demo Mode.", 
+        resetLink,
+        isDemoMode: true 
+      });
+    }
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
