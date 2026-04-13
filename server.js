@@ -14,11 +14,16 @@ const paymentRoutes = require("./routes/payment");
 const ensureAdmin = require("./utils/ensureAdmin");
 require("dotenv").config();
 
-// Connect to MongoDB
-connectDB();
-// Ensure admin exists (from .env)
-ensureAdmin().catch((err) => console.error("[ADMIN] Seed error:", err));
+// // Connect to MongoDB
+// connectDB();
+// // Ensure admin exists (from .env)
+// ensureAdmin().catch((err) => console.error("[ADMIN] Seed error:", err));
 
+connectDB()
+  .then(() => console.log("MongoDB connected"))
+  .catch((err) => console.error("DB connection error:", err));
+
+ensureAdmin().catch((err) => console.error("[ADMIN] Seed error:", err));
 // Middleware
 app.use(cors({
   origin: process.env.FRONTEND_URL || "http://localhost:5173",
@@ -38,12 +43,21 @@ app.use("/chat", chatRoutes);
 app.use("/payments", paymentRoutes);
 
 // Health check route
+// app.get("/health", (req, res) => {
+//   res.json({ status: "OK", message: "Healthcare Appointment System API is running" });
+// });
+
+// // Start server
+// const PORT = process.env.PORT || 3000;
+// app.listen(PORT, () => {
+//   console.log(`Server running on port ${PORT}`);
+// });
+
+
+// Health check route
 app.get("/health", (req, res) => {
   res.json({ status: "OK", message: "Healthcare Appointment System API is running" });
 });
 
-// Start server
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+// IMPORTANT for Vercel
+module.exports = app;
