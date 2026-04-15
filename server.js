@@ -160,9 +160,21 @@ app.get("/", (req, res) => {
 // Health Check
 // --------------------
 app.get("/health", (req, res) => {
+  const dbStatus = mongoose.connection.readyState;
+  const statusMap = {
+    0: "Disconnected",
+    1: "Connected",
+    2: "Connecting",
+    3: "Disconnecting",
+    99: "Uninitialized",
+  };
+
   res.json({
     status: "OK",
+    database: statusMap[dbStatus] || "Unknown",
+    dbRawState: dbStatus,
     message: "Healthcare Appointment System API is running",
+    timestamp: new Date()
   });
 });
 
