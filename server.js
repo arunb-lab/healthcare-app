@@ -96,8 +96,8 @@ const initDB = async () => {
   if (dbConnected) return;
 
   try {
-    if (!process.env.MONGO_URI) {
-      throw new Error("MONGO_URI is not defined in environment variables");
+    if (!process.env.MONGO_URI && !process.env.DB_URI) {
+      throw new Error("MongoDB connection string (MONGO_URI or DB_URI) is not defined");
     }
 
     await connectDB();
@@ -153,6 +153,13 @@ app.use("/admin", adminRoutes);
 app.use("/reviews", reviewRoutes);
 app.use("/chat", chatRoutes);
 app.use("/payments", paymentRoutes);
+
+// --------------------
+// Root Route
+// --------------------
+app.get("/", (req, res) => {
+  res.send("<h1>Healthcare Appointment System API</h1><p>Status: Running</p><p>Check <a href='/health'>/health</a> for more details.</p>");
+});
 
 // --------------------
 // Health Check
