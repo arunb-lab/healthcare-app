@@ -4,8 +4,7 @@ require("dotenv").config();
 const connectDB = async () => {
   const uri = process.env.MONGODB_URI || process.env.DB_URI;
   if (!uri) {
-    console.error("MongoDB URI not found in environment variables.");
-    process.exit(1);
+    throw new Error("MongoDB URI not found in environment variables. Please check Vercel settings.");
   }
   
   try {
