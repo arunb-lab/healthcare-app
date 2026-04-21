@@ -113,7 +113,7 @@ initDB();
 // --------------------
 const allowedOrigins = [
   "http://localhost:5173",
-  "https://aakriti-kafle-healthcare-appointment.netlify.app",
+  "hhttps://aakritiapp.netlify.app",
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
@@ -140,14 +140,14 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 // --------------------
 // Routes
 // --------------------
-app.use("/users", userRoutes);
-app.use("/patients", patientRoutes);
-app.use("/doctors", doctorRoutes);
-app.use("/appointments", appointmentRoutes);
-app.use("/admin", adminRoutes);
-app.use("/reviews", reviewRoutes);
-app.use("/chat", chatRoutes);
-app.use("/payments", paymentRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/patients", patientRoutes);
+app.use("/api/doctors", doctorRoutes);
+app.use("/api/appointments", appointmentRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/reviews", reviewRoutes);
+app.use("/api/chat", chatRoutes);
+app.use("/api/payments", paymentRoutes);
 
 // --------------------
 // Root Route
