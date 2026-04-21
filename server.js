@@ -189,21 +189,7 @@ app.get("/health", async (req, res) => {
     });
   }
 });
-
-
-
-
-  res.json({
-    status: "OK",
-    database: statusMap[dbStatus] || "Unknown",
-    dbRawState: dbStatus,
-    availableEnvKeys: Object.keys(process.env).filter(key => 
-      !key.includes("SECRET") && !key.includes("PASS") && !key.includes("KEY")
-    ), // Show only safe keys
-    message: "Healthcare Appointment System API is running",
-    timestamp: new Date()
-  });
-});
+//------------------------------------------------------------
 
 // --------------------
 // VERCEL EXPORT (IMPORTANT)
