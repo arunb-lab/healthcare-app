@@ -63,7 +63,7 @@
 // module.exports = app;
 
 
-
+const mongoose = require("mongoose");
 const express = require("express");
 const path = require("path");
 const cors = require("cors");
@@ -159,16 +159,35 @@ app.get("/", (req, res) => {
 // --------------------
 // Health Check
 // --------------------
-app.get("/health", (req, res) => {
-  const mongoose = require("mongoose");
-  const dbStatus = mongoose.connection.readyState;
-  const statusMap = {
-    0: "Disconnected",
-    1: "Connected",
-    2: "Connecting",
-    3: "Disconnecting",
-    99: "Uninitialized",
-  };
+app.get("/health", async (req, res) => {
+  try {
+    await connectDB(); // 🔥 ensure DB connection
+
+    const dbStatus = mongoose.connection.readyState;
+
+    const statusMap = {
+      0: "Disconnected",
+      1: "Connected",
+      2: "Connecting",
+      3: "Disconnecting",
+    };
+
+    res.json({
+      status: "OK",
+      database: statusMap[dbStatus] || "Unknown",
+      dbRawState: dbStatus,
+      message: "Healthcare Appointment System API is running",
+      timestamp: new Date()
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      status: "ERROR",
+      database: "Disconnected",
+      error: err.message
+    });
+  }
+});
 
   res.json({
     status: "OK",
