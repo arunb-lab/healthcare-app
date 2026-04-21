@@ -1,21 +1,30 @@
 const mongoose = require("mongoose");
-require("dotenv").config();
+
+let cached = global._mongoose;
+
+if (!cached) {
+  cached = global._mongoose = { conn: null, promise: null };
+}
 
 const connectDB = async () => {
+  if (cached.conn) {
+    return cached.conn;
+  }
+
   const uri = process.env.MONGODB_URI || process.env.DB_URI;
+
   if (!uri) {
-    throw new Error("MongoDB URI not found in environment variables. Please check Vercel settings.");
+    throw new Error("MongoDB URI not found");
   }
-  
-  try {
-    await mongoose.connect(uri, {
-      serverSelectionTimeoutMS: 5000, // Timeout after 5 seconds instead of 30
+
+  if (!cached.promise) {
+    cached.promise = mongoose.connect(uri, {
+      serverSelectionTimeoutMS: 30000,
     });
-    console.log("MongoDB connected successfully");
-  } catch (error) {
-    console.error("MongoDB connection error:", error.message);
-    throw error; // Let the caller handle the error without killing the process
   }
+
+  cached.conn = await cached.promise;
+  return cached.conn;
 };
 
 module.exports = connectDB;
