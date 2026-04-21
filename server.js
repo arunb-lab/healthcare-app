@@ -161,7 +161,7 @@ app.get("/", (req, res) => {
 // --------------------
 app.get("/health", async (req, res) => {
   try {
-    await connectDB(); // 🔥 ensure DB connection
+    await connectDB(); // now valid
 
     const dbStatus = mongoose.connection.readyState;
 
@@ -176,18 +176,22 @@ app.get("/health", async (req, res) => {
       status: "OK",
       database: statusMap[dbStatus] || "Unknown",
       dbRawState: dbStatus,
-      message: "Healthcare Appointment System API is running",
+      message: "Healthcare API running",
       timestamp: new Date()
     });
 
   } catch (err) {
+    console.error("Health route error:", err);
+
     res.status(500).json({
       status: "ERROR",
-      database: "Disconnected",
-      error: err.message
+      message: err.message
     });
   }
 });
+
+
+
 
   res.json({
     status: "OK",
