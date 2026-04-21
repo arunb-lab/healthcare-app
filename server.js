@@ -160,6 +160,7 @@ app.get("/", (req, res) => {
 // Health Check
 // --------------------
 app.get("/health", (req, res) => {
+  const mongoose = require("mongoose");
   const dbStatus = mongoose.connection.readyState;
   const statusMap = {
     0: "Disconnected",
