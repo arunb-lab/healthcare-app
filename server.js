@@ -113,7 +113,7 @@ initDB();
 // --------------------
 const allowedOrigins = [
   "http://localhost:5173",
-  "hhttps://aakritiapp.netlify.app",
+  "https://aakritiapp.netlify.app",
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
