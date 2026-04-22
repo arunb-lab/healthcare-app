@@ -19,7 +19,11 @@ const connectDB = async () => {
 
   if (!cached.promise) {
     cached.promise = mongoose.connect(uri, {
-      serverSelectionTimeoutMS: 30000,
+      serverSelectionTimeoutMS: 10000,
+    }).catch(err => {
+      // ❗ CRITICAL FIX: reset promise on failure
+      cached.promise = null;
+      throw err;
     });
   }
 
